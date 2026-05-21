@@ -1,0 +1,38 @@
+# PlatformIO
+firmware/.pio/
+firmware/.pioenvs/
+firmware/.piolibdeps/
+
+# Generated font files (run generate_fonts.bat to recreate)
+firmware/src/font_main_large.c
+firmware/src/font_main_medium.c
+firmware/src/font_main_small.c
+firmware/src/font_mono.c
+
+# Inter font download (generate_fonts.bat fetches this)
+fonts/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# BLE address cache (generated at runtime)
+*.config/claudeoclock/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
