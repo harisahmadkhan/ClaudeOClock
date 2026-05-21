@@ -42,3 +42,9 @@ uint8_t usage_rate_group() {
     if (rate >= 0.1f)  return 1;
     return 0;
 }
+
+uint8_t usage_zone(float session_pct) {
+    if (session_pct >= 80.0f) return 2;  // red
+    if (session_pct >= 50.0f) return 1;  // amber
+    return 0;                             // green
+}

@@ -14,7 +14,7 @@
 #include "ble.h"
 #include "splash.h"
 #include "idle.h"
-#include "usage_rate.h"
+#include "usage_rate.h"   // provides usage_zone()
 
 // LVGL touch input driver
 static lv_indev_t* _touch_indev = nullptr;
@@ -154,7 +154,7 @@ void loop() {
         uint8_t len = ble_get_data(buf, sizeof(buf));
         if (_parse_json(buf, len)) {
             usage_rate_sample(g_usage.session_pct);
-            uint8_t new_group = usage_rate_group();
+            uint8_t new_group = usage_zone(g_usage.session_pct);
             if (new_group != _anim_group) {
                 _anim_group = new_group;
                 splash_set_group(_anim_group);

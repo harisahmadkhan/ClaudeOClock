@@ -33,10 +33,21 @@
 static lv_obj_t* _screens[5] = {};  // indexed by screen_t
 static screen_t  _current = SCREEN_SPLASH;
 
-// Spinner text objects (one per data screen)
-static lv_obj_t* _spinner_combined   = nullptr;
-static lv_obj_t* _spinner_ai         = nullptr;
-static lv_obj_t* _spinner_code       = nullptr;
+// Splash screen overlay label (uses word list from splash.cpp)
+static lv_obj_t* _spinner_splash = nullptr;
+
+// Thinking labels on data screens — cycle through Claude Code-style words
+static lv_obj_t* _spinner_combined  = nullptr;
+static lv_obj_t* _spinner_ai        = nullptr;
+static lv_obj_t* _spinner_code      = nullptr;
+
+static const char* const _thinking_labels[] = {
+    "Thinking", "Analyzing", "Considering", "Reflecting", "Synthesizing",
+    "Reasoning", "Evaluating", "Reviewing", "Processing", "Examining",
+};
+static const int _thinking_count = 10;
+static int      _thinking_idx  = 0;
+static uint32_t _thinking_last = 0;
 
 // Combined screen labels
 static lv_obj_t* _ai_session_pct_lbl   = nullptr;
@@ -210,12 +221,12 @@ static void _make_usage_block(
 
 static void _build_splash_screen() {
     _screens[SCREEN_SPLASH] = _make_screen();
-    // Splash screen content is rendered directly by splash.cpp via display HAL.
-    // A transparent LVGL overlay just holds the spinner text.
-    _spinner_combined = _make_label(_screens[SCREEN_SPLASH], FONT_SMALL, THEME_DIM,
+    // Splash content rendered by splash.cpp via display HAL.
+    // LVGL overlay holds the splash word ticker (uses word list, not thinking labels).
+    _spinner_splash = _make_label(_screens[SCREEN_SPLASH], FONT_SMALL, THEME_DIM,
         0, H - 28, "✻ Cogitating…");
-    lv_obj_set_width(_spinner_combined, W);
-    lv_obj_set_style_text_align(_spinner_combined, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(_spinner_splash, W);
+    lv_obj_set_style_text_align(_spinner_splash, LV_TEXT_ALIGN_CENTER, 0);
 }
 
 static void _build_combined_screen() {
@@ -237,7 +248,7 @@ static void _build_combined_screen() {
     _make_usage_block(s, COMBINED_RIGHT_X, COMBINED_ROW2_Y, COMBINED_PANEL_W, "Weekly ●",
         &_cc_weekly_pct_lbl, &_cc_weekly_bar, &_cc_weekly_reset_lbl);
 
-    _make_spinner_label(s);
+    _spinner_combined = _make_spinner_label(s);
 }
 
 static void _build_ai_screen() {
@@ -248,7 +259,7 @@ static void _build_ai_screen() {
         &_ai_d_session_pct_lbl, &_ai_d_session_bar, &_ai_d_session_reset_lbl);
     _make_usage_block(s, COMBINED_MARGIN, DETAIL_P2_Y, DETAIL_PANEL_W, "Weekly ●",
         &_ai_d_weekly_pct_lbl, &_ai_d_weekly_bar, &_ai_d_weekly_reset_lbl);
-    _make_spinner_label(s);
+    _spinner_ai = _make_spinner_label(s);
 }
 
 static void _build_code_screen() {
@@ -263,7 +274,7 @@ static void _build_code_screen() {
     // Status badge (shown only when "limited")
     _cc_d_status_badge = _make_label(s, FONT_SMALL, THEME_AMBER, COMBINED_MARGIN, DETAIL_P1_Y - 24, "");
 
-    _make_spinner_label(s);
+    _spinner_code = _make_spinner_label(s);
 }
 
 static void _build_bt_screen() {
@@ -366,6 +377,21 @@ void ui_update(const UsageData* d) {
 
 void ui_tick_anim() {
     lv_timer_handler();
+
+    // Rotate thinking labels on all data screens every 1.5 seconds.
+    // Uses Claude Code-style introspection words, not the splash word list.
+    uint32_t now = millis();
+    if (now - _thinking_last >= 1500) {
+        _thinking_last = now;
+        _thinking_idx  = (_thinking_idx + 1) % _thinking_count;
+
+        char buf[32];
+        snprintf(buf, sizeof(buf), "✻ %s…", _thinking_labels[_thinking_idx]);
+
+        if (_spinner_combined) lv_label_set_text(_spinner_combined, buf);
+        if (_spinner_ai)       lv_label_set_text(_spinner_ai,       buf);
+        if (_spinner_code)     lv_label_set_text(_spinner_code,     buf);
+    }
 }
 
 void ui_cycle_screen() {

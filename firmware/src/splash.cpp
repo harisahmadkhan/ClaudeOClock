@@ -87,7 +87,7 @@ void splash_tick() {
 }
 
 void splash_set_group(uint8_t group) {
-    if (group > 3) group = 3;
+    if (group > 2) group = 2;
     if (group == _group) return;
     _group    = group;
     _anim_idx = splash_group_start[group];
