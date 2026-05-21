@@ -109,6 +109,18 @@ Touch anywhere → toggle between current screen and splash.
 
 ---
 
+## BLE UUIDs
+
+| Name | UUID |
+|------|------|
+| Custom service | `12345678-1234-1234-1234-123456789abc` |
+| RX characteristic (phone → device) | `12345678-1234-1234-1234-123456789abd` |
+| TX characteristic (device → phone) | `12345678-1234-1234-1234-123456789abe` |
+| REQ characteristic | `12345678-1234-1234-1234-123456789abf` |
+| HID service | `0x1812` (standard) |
+
+---
+
 ## Credits
 
 ```
