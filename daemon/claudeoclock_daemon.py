@@ -1,12 +1,11 @@
 """
 ClaudeOClock Daemon — Windows
 Merges claude.ai data (from Chrome extension) with Claude Code API data
-and pushes to the ESP32 over BLE every 60 seconds.
+and pushes to the ESP32 over Wi-Fi every 60 seconds.
 
-Dependencies: pip install bleak httpx
+Dependencies: pip install httpx
 """
 
-import asyncio
 import json
 import logging
 import os
@@ -18,12 +17,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import httpx
-from bleak import BleakClient, BleakScanner
 
-# ── Logging ────────────────────────────────────────────────────────────────
+# ── Paths ──────────────────────────────────────────────────────────────────────
 
-LOG_DIR = Path.home() / ".config" / "claudeoclock"
+LOG_DIR    = Path.home() / ".config" / "claudeoclock"
+TOKEN_PATH = LOG_DIR / "token.txt"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── Logging ────────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,20 +36,13 @@ logging.basicConfig(
 )
 log = logging.getLogger("claudeoclock")
 
-# ── BLE constants ──────────────────────────────────────────────────────────
+# ── Constants ──────────────────────────────────────────────────────────────────
 
-DEVICE_NAME   = "ClaudeOclock"
-SERVICE_UUID  = "c1a7d001-c1a7-d001-c1a7-d001c1a7d001"
-RX_CHAR_UUID  = "c1a7d001-c1a7-d001-c1a7-d001c1a7d002"
-TX_CHAR_UUID  = "c1a7d001-c1a7-d001-c1a7-d001c1a7d003"
-REQ_CHAR_UUID = "c1a7d001-c1a7-d001-c1a7-d001c1a7d004"
+DEVICE_URL    = "http://claudeoclock.local/data"
+PUSH_INTERVAL = 60  # seconds between Wi-Fi pushes
 
-BLE_ADDRESS_CACHE = LOG_DIR / "ble-address.txt"
-
-# ── Anthropic API constants ────────────────────────────────────────────────
-
-API_URL = "https://api.anthropic.com/v1/messages"
-API_POLL_INTERVAL = 60  # seconds
+API_URL           = "https://api.anthropic.com/v1/messages"
+API_POLL_INTERVAL = 60
 
 CREDENTIAL_PATHS = [
     Path.home() / ".claude" / ".credentials.json",
@@ -56,7 +50,7 @@ CREDENTIAL_PATHS = [
     Path.home() / "AppData" / "Roaming" / "Claude" / ".credentials.json",
 ]
 
-# ── Shared state ───────────────────────────────────────────────────────────
+# ── Shared state ───────────────────────────────────────────────────────────────
 
 ai_data_lock = threading.Lock()
 ai_data = {
@@ -76,7 +70,7 @@ cc_data = {
     "ok": False,
 }
 
-# ── HTTP server (receives claude.ai data from extension) ───────────────────
+# ── HTTP server (receives claude.ai data from extension) ───────────────────────
 
 class UsageHandler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -92,7 +86,7 @@ class UsageHandler(BaseHTTPRequestHandler):
                 for k in ai_data:
                     if k in data:
                         ai_data[k] = data[k]
-            log.debug("Extension update: session=%s%% weekly=%s%%",
+            log.debug("Extension: session=%s%% weekly=%s%%",
                       ai_data["ai_session_pct"], ai_data["ai_weekly_pct"])
             self.send_response(200)
         except Exception as e:
@@ -110,7 +104,7 @@ def start_http_server():
     server.serve_forever()
 
 
-# ── Token loader ───────────────────────────────────────────────────────────
+# ── OAuth token loader ─────────────────────────────────────────────────────────
 
 def load_oauth_token() -> str | None:
     for path in CREDENTIAL_PATHS:
@@ -119,10 +113,8 @@ def load_oauth_token() -> str | None:
         try:
             with open(path, encoding="utf-8") as f:
                 obj = json.load(f)
-            # Direct key
             if "accessToken" in obj:
                 return obj["accessToken"]
-            # Nested under claudeAiOauth
             nested = obj.get("claudeAiOauth", {})
             if "accessToken" in nested:
                 return nested["accessToken"]
@@ -132,19 +124,29 @@ def load_oauth_token() -> str | None:
     return None
 
 
-# ── Anthropic API poller ───────────────────────────────────────────────────
+# ── Device token loader ────────────────────────────────────────────────────────
+
+def load_device_token() -> str | None:
+    if TOKEN_PATH.exists():
+        token = TOKEN_PATH.read_text().strip()
+        if token:
+            return token
+    log.warning("Device token not found at %s — run install-windows.bat first.", TOKEN_PATH)
+    return None
+
+
+# ── Anthropic API poller ───────────────────────────────────────────────────────
 
 def _mins_until(unix_ts: float) -> int:
     now = datetime.now(timezone.utc).timestamp()
-    delta = unix_ts - now
-    return max(0, int(delta / 60))
+    return max(0, int((unix_ts - now) / 60))
 
 
-async def poll_anthropic_api():
+def poll_anthropic_api():
     while True:
         token = load_oauth_token()
         if not token:
-            await asyncio.sleep(API_POLL_INTERVAL)
+            time.sleep(API_POLL_INTERVAL)
             continue
 
         headers = {
@@ -161,25 +163,21 @@ async def poll_anthropic_api():
         }
 
         try:
-            async with httpx.AsyncClient(timeout=20) as client:
-                resp = await client.post(API_URL, headers=headers, json=body)
+            with httpx.Client(timeout=20) as client:
+                resp = client.post(API_URL, headers=headers, json=body)
             h = resp.headers
 
             def pct_hdr(name: str) -> int:
                 v = h.get(name)
-                if v is None:
-                    return 0
                 try:
-                    return min(100, max(0, round(float(v) * 100)))
+                    return min(100, max(0, round(float(v) * 100))) if v else 0
                 except ValueError:
                     return 0
 
             def reset_hdr(name: str) -> int:
                 v = h.get(name)
-                if v is None:
-                    return -1
                 try:
-                    return _mins_until(float(v))
+                    return _mins_until(float(v)) if v else -1
                 except ValueError:
                     return -1
 
@@ -198,18 +196,17 @@ async def poll_anthropic_api():
             with cc_data_lock:
                 cc_data["ok"] = False
 
-        await asyncio.sleep(API_POLL_INTERVAL)
+        time.sleep(API_POLL_INTERVAL)
 
 
-# ── Payload builder ────────────────────────────────────────────────────────
+# ── Payload builder ────────────────────────────────────────────────────────────
 
-def build_payload() -> bytes:
+def build_payload() -> dict:
     with cc_data_lock:
         cc = dict(cc_data)
     with ai_data_lock:
         ai = dict(ai_data)
-
-    payload = {
+    return {
         "s":     cc["s"],
         "sr":    cc["sr"],
         "w":     cc["w"],
@@ -221,100 +218,59 @@ def build_payload() -> bytes:
         "ai_wr": ai["ai_weekly_reset_mins"],
         "ok":    cc["ok"],
     }
-    return json.dumps(payload, separators=(",", ":")).encode()
 
 
-# ── BLE layer ──────────────────────────────────────────────────────────────
+# ── Wi-Fi push loop ────────────────────────────────────────────────────────────
 
-async def find_device() -> str | None:
-    # Try cached address first
-    if BLE_ADDRESS_CACHE.exists():
-        addr = BLE_ADDRESS_CACHE.read_text().strip()
-        if addr:
-            log.info("Trying cached BLE address: %s", addr)
-            return addr
+def push_to_device(payload: dict, token: str):
+    try:
+        r = httpx.post(
+            DEVICE_URL,
+            json=payload,
+            headers={"X-ClaudeOclock-Token": token},
+            timeout=5.0,
+        )
+        if r.status_code == 200:
+            log.info("[push] OK — session=%s%% weekly=%s%%",
+                     payload["s"], payload["w"])
+        elif r.status_code == 401:
+            log.warning("[push] Unauthorized — token in token.txt doesn't match device")
+        else:
+            log.warning("[push] Device returned %s", r.status_code)
+    except httpx.ConnectError:
+        log.warning("[push] Device not found — is ClaudeOclock on the same WiFi?")
+    except httpx.TimeoutException:
+        log.warning("[push] Timeout — device may be sleeping")
+    except Exception as e:
+        log.warning("[push] Error: %s", e)
 
-    log.info("Scanning for '%s'…", DEVICE_NAME)
-    device = await BleakScanner.find_device_by_name(DEVICE_NAME, timeout=15)
-    if device:
-        log.info("Found device: %s (%s)", device.name, device.address)
-        BLE_ADDRESS_CACHE.write_text(device.address)
-        return device.address
 
-    log.warning("Device '%s' not found in scan.", DEVICE_NAME)
-    return None
-
-
-async def ble_loop():
-    refresh_requested = asyncio.Event()
-
-    backoff = 5
-
+def wifi_push_loop():
     while True:
-        addr = await find_device()
-        if not addr:
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 120)
-            continue
-
-        backoff = 5  # reset on successful find
-
-        try:
-            async with BleakClient(addr, timeout=20) as client:
-                log.info("BLE connected to %s", addr)
-
-                def on_req(_char, data: bytearray):
-                    log.debug("Device requested refresh")
-                    refresh_requested.set()
-
-                try:
-                    await client.start_notify(REQ_CHAR_UUID, on_req)
-                except Exception:
-                    pass  # REQ char may not exist on older firmware
-
-                last_push = 0.0
-
-                while client.is_connected:
-                    now = time.monotonic()
-                    if refresh_requested.is_set() or (now - last_push) >= API_POLL_INTERVAL:
-                        refresh_requested.clear()
-                        payload = build_payload()
-                        if len(payload) > 512:
-                            log.error("Payload too large: %d bytes", len(payload))
-                        else:
-                            await client.write_gatt_char(RX_CHAR_UUID, payload, response=False)
-                            log.info("Pushed %d bytes to device", len(payload))
-                        last_push = time.monotonic()
-                    await asyncio.sleep(1)
-
-        except Exception as e:
-            log.warning("BLE disconnected: %s", e)
-            # Clear cached address on connect failure so we re-scan
-            BLE_ADDRESS_CACHE.unlink(missing_ok=True)
-
-        log.info("BLE reconnecting in %ss…", backoff)
-        await asyncio.sleep(backoff)
-        backoff = min(backoff * 2, 60)
+        device_token = load_device_token()
+        if device_token:
+            payload = build_payload()
+            push_to_device(payload, device_token)
+        time.sleep(PUSH_INTERVAL)
 
 
-# ── Entry point ────────────────────────────────────────────────────────────
+# ── Entry point ────────────────────────────────────────────────────────────────
 
-async def main():
+def main():
     log.info("ClaudeOClock daemon starting…")
 
-    # HTTP server on its own thread (blocking)
-    http_thread = threading.Thread(target=start_http_server, daemon=True)
-    http_thread.start()
+    # HTTP server on its own thread (blocking, localhost only)
+    threading.Thread(target=start_http_server, daemon=True).start()
 
-    # Run API poller and BLE loop concurrently
-    await asyncio.gather(
-        poll_anthropic_api(),
-        ble_loop(),
-    )
+    # API poller on its own thread
+    threading.Thread(target=poll_anthropic_api, daemon=True).start()
+
+    # Wi-Fi push loop — runs in main thread
+    wifi_push_loop()
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
         log.info("Daemon stopped.")
