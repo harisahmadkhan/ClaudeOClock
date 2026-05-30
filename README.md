@@ -37,25 +37,14 @@ Or manually:
 pio run -d firmware -e claudeoclock_amoled_216 -t upload --upload-port COM3
 ```
 
-### 2. Generate fonts (required before build)
-
-Install Node.js, then:
-
-```batch
-generate_fonts.bat
-```
-
-This downloads Inter and generates the four LVGL font files.
-After generation, add `-DFONTS_GENERATED` to `build_flags` in `firmware/platformio.ini`.
-
-### 3. Connect the device to Wi-Fi
+### 2. Connect the device to Wi-Fi
 
 On first boot the device shows the **WiFi Setup** screen automatically.
 Tap your network from the scan list, scan the QR code with your phone
 (or visit `http://192.168.4.1`), enter your Wi-Fi password, and tap Connect.
 The device reboots into normal mode once connected.
 
-### 4. Install the Python daemon
+### 3. Install the Python daemon
 
 **Run this after the device is on Wi-Fi** — the installer fetches the auth
 token from the device automatically.
@@ -68,7 +57,7 @@ install-windows.bat
 The daemon runs at login as a Windows Task Scheduler job and pushes data
 to the device at `http://claudeoclock.local/data` every 60 seconds.
 
-### 5. Install the Chrome extension
+### 4. Install the Chrome extension
 
 Open Chrome → Extensions → Load unpacked → select the `extension/` folder.
 
