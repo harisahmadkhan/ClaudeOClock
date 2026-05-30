@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "wifi_setup.h"
 #include "theme.h"
 #include "fonts.h"
 #include "icons.h"
@@ -81,9 +82,6 @@ static lv_obj_t* _cc_d_weekly_bar        = nullptr;
 static lv_obj_t* _cc_d_weekly_reset_lbl  = nullptr;
 static lv_obj_t* _cc_d_status_badge      = nullptr;
 
-// BT screen
-static lv_obj_t* _bt_status_lbl = nullptr;
-static lv_obj_t* _bt_mac_lbl    = nullptr;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -277,18 +275,6 @@ static void _build_code_screen() {
     _spinner_code = _make_spinner_label(s);
 }
 
-static void _build_bt_screen() {
-    lv_obj_t* s = _make_screen();
-    _screens[SCREEN_BLUETOOTH] = s;
-    _make_header(s, "Bluetooth");
-
-    _bt_status_lbl = _make_label(s, FONT_MEDIUM, THEME_TEXT, COMBINED_MARGIN, 80, "Advertising…");
-    _bt_mac_lbl    = _make_label(s, FONT_SMALL, THEME_DIM, COMBINED_MARGIN, 120, "");
-
-    _make_label(s, FONT_SMALL, THEME_DIM, COMBINED_MARGIN, 380,
-        "ClaudeOclock — built from scratch with Claude Code");
-    _make_label(s, FONT_SMALL, THEME_DIM, COMBINED_MARGIN, 400, "By Haris Ahmad Khan");
-}
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -297,13 +283,14 @@ void ui_init() {
     _build_combined_screen();
     _build_ai_screen();
     _build_code_screen();
-    _build_bt_screen();
+    _screens[SCREEN_WIFI_SETUP] = wifi_setup_build();
 }
 
 void ui_show_screen(screen_t s) {
     if (s >= 5) s = SCREEN_SPLASH;
     _current = s;
     lv_screen_load(_screens[s]);
+    if (s == SCREEN_WIFI_SETUP) wifi_setup_enter();
 }
 
 screen_t ui_current_screen() {
@@ -368,11 +355,6 @@ void ui_update(const UsageData* d) {
     // Status badge
     bool limited = strcmp(d->status, "limited") == 0;
     lv_label_set_text(_cc_d_status_badge, limited ? "⚠ limited" : "");
-
-    // BT screen
-    if (_bt_status_lbl) {
-        lv_label_set_text(_bt_status_lbl, "Advertising…");
-    }
 }
 
 void ui_tick_anim() {

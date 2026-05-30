@@ -7,7 +7,7 @@ typedef enum {
     SCREEN_COMBINED    = 1,
     SCREEN_CLAUDE_AI   = 2,
     SCREEN_CLAUDE_CODE = 3,
-    SCREEN_BLUETOOTH   = 4,
+    SCREEN_WIFI_SETUP  = 4,
 } screen_t;
 
 void     ui_init();

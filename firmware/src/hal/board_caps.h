@@ -10,7 +10,7 @@ struct BoardCaps {
     bool has_touch;
     bool has_battery;
     bool has_imu;
-    bool has_ble;
+    bool has_wifi;
 };
 
 // Implemented in boards/<name>/caps.cpp

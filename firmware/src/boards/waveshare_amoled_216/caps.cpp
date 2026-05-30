@@ -9,7 +9,7 @@ static const BoardCaps _caps = {
     .has_touch    = true,
     .has_battery  = true,
     .has_imu      = true,
-    .has_ble      = true,
+    .has_wifi     = true,
 };
 
 const BoardCaps& board_caps() {
